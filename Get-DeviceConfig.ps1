@@ -13,6 +13,7 @@
 ip,type,enpwd
 192.168.1.1,CiscoASA,PasswordEnable
 192.168.1.2,CiscoSW,PasswordEnable
+192.168.1.3,HuaweiSW,PasswordEnable
 
 .PARAMETER Path
 Задает путь для сохранения конфигурационных файлов. Не обязательный параметр.
@@ -39,11 +40,10 @@ Get-DeviceConfig.ps1 -FileDevice "C:\Device.txt" -Path "D:\Config" -UserName "ad
 
 .NOTES
 ИМЯ: Get-DeviceConfig.ps1
-ПРОТЕСТИРОВАНО НА: PowerShell v5.1 + модуль Posh-SSH v2.1(https://www.powershellgallery.com/packages/Posh-SSH/2.1)
+ПРОТЕСТИРОВАНО НА: PowerShell v5.1 + модуль Posh-SSH v2.3(https://www.powershellgallery.com/packages/Posh-SSH/)
 ДАТА СОЗДАНИЯ: 24.03.2019
 АВТОР: Полетаев Сергей
 #>
-
 [CmdletBinding()]
 
 param (
@@ -66,7 +66,7 @@ function getcfg {
 Process {
     try {
         #Создаем сессию SSH
-        $session = New-SSHSession -ComputerName $itemip -Credential $cred -acceptkey:$true
+        $session = New-SSHSession -ComputerName $itemip -Credential $cred -acceptkey:$true -Verbose
         #Создаем поток
         $stream = $session.Session.CreateShellStream("dumb", 0, 0, 0, 0, 1000)
         #определяем тип оборудования и загоняем поток вывода(конфиг) в переменную cfg
@@ -75,7 +75,7 @@ Process {
                 $stream.Write("term len 0`n")
                 sleep 2
                 $stream.Write("show run`n")
-                sleep 10
+                sleep 15
 
                 $cfg = $stream.Read()
 
@@ -87,8 +87,8 @@ Process {
                 sleep 1
 
                 #Проверка режима enable
-                $prmpt = $stream.Read().Trim()
-                if ( $prmpt -like "*>*" ) {
+                $prompt = $stream.Read().Trim()
+                if ( $prompt -like "*>*" ) {
                     $stream.Write("en`n")
                     sleep 1
                     $stream.Write("$itemenpwd`n")
@@ -166,7 +166,7 @@ Process {
 #Проверяем наличие модуля Posh-SSH
 if ( !(Get-module Posh-SSH) ) {
     try   { Import-Module Posh-SSH -EA Stop }
-    catch { Write-Host "Модуль Posh-SSH не загружен!`nСсылка для скачивания https://www.powershellgallery.com/packages/Posh-SSH/2.1`nДальнейшее выполнение скрипта невозможно..." -f Red; break }
+    catch { Write-Host "Модуль Posh-SSH не загружен!`nСсылка для скачивания https://www.powershellgallery.com/packages/Posh-SSH`nлибо установить командой: Install-Module -Name Posh-SSH`nДальнейшее выполнение скрипта невозможно..." -f Red; break }
 }
 
 #Создаем папку куда сохранять, если нету таковой
@@ -179,6 +179,9 @@ if ( Test-Path $FileDevice ) {
         #Данные для авторизации
         $cred = Get-Credential -Credential $UserName
         #если пароль на enable совпадает с паролем на авторизацию можно так       $enpwd = $cred.GetNetworkCredential().password
+
+        #На всякий случай удаляем локально сохраненные ssh-ключи к устройствам(вдруг изменились)
+        Get-SSHTrustedHost | Remove-SSHTrustedHost
 
         foreach ( $item in $devices ) {
             if ( Test-Connection -ComputerName $item.ip -Count 2 -Quiet -ea SilentlyContinue ) { getcfg $item.ip $item.type $item.enpwd }
