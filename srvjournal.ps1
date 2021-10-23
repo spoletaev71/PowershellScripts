@@ -1,7 +1,7 @@
 ﻿#####################################################################################
 ## ИМЯ: srvjournal.ps1
-## ЯЗЫК: PoSH V2
-## ДАТА СОЗДАНИЯ: 01.07.2020
+## ЯЗЫК: PoSH V5
+## ДАТА ИЗМЕНЕНИЯ: 01.07.2020
 ## АВТОР: Полетаев Сергей
 ## ОПИСАНИЕ: Скрипт для создания журнала о конфигурации доменных серверов или компов.
 ## Можно добавить в планировщик заданий для наличия всегда свежей информации. 
@@ -30,12 +30,13 @@ function ConvertTo-Encoding ([string]$From, [string]$To){
 }#function ConvertTo-Encoding
 
 
-if (($NameServer -eq '') -or ($NameServer -eq 'localhost')) {
-        $NameServer = $env:computername
-        $params = @{}
-    }
+if (($NameServer -eq '') -or ($NameServer -eq 'localhost') -or ($NameServer -eq '127.0.0.1')) {
+    $NameServer = $env:computername
+    $params = @{}
+}
 elseif ( $NameServer -eq $env:computername ) { $params = @{} }
-else { $params = @{"ComputerName"=$NameServer} }
+else { $params = @{"ComputerName" = $NameServer} }
+
 
 $journal  = (Get-Location).Path+"\$NameServer.txt"
 
@@ -62,7 +63,7 @@ if (Test-Connection $NameServer -Count 3 -Quiet) {
 
     "4. Сведения об оперативной памяти:" | Out-File -Append $journal
     Get-WmiObject Win32_MemoryArray @params `
-        | ft @{name="Size (GB)"; expression={"{0:n2}" -f ($_.EndingAddress/1048576)}} | Out-File -Append $journal
+        | fl @{name="Size (GB)"; expression={"{0:n2}" -f ($_.EndingAddress/1048576)}} | Out-File -Append $journal
     Get-WmiObject Win32_PhysicalMemory @params `
         | ft Manufacturer,DeviceLocator,@{name="Size (MB)"; expression={"{0:n2}" -f ($_.Capacity/1048576)}} -AutoSize `
         | Out-File -Append $journal
@@ -82,19 +83,25 @@ if (Test-Connection $NameServer -Count 3 -Quiet) {
     "8. Сведения о часовом поясе:" | Out-File -Append $journal
     Get-WmiObject Win32_TimeZone @params | fl Bias,Caption | Out-File -Append $journal
     if ($psISE) {
-        $NTPstate = w32tm /query /status /computer:$NameServer | ConvertTo-Encoding cp866 windows-1251
-        $NTPconf = w32tm /query /configuration /computer:$NameServer | ConvertTo-Encoding cp866 windows-1251
+        $NTPstate = w32tm /query /status /computer:$NameServer | Out-String | ConvertTo-Encoding cp866 windows-1251
+        $NTPconf = w32tm /query /configuration /computer:$NameServer | Out-String | ConvertTo-Encoding cp866 windows-1251
     }
     else {
-        $NTPstate = w32tm /query /status /computer:$NameServer
-        $NTPconf = w32tm /query /configuration /computer:$NameServer
+        $NTPstate = w32tm /query /status /computer:$NameServer | Out-String
+        $NTPconf = w32tm /query /configuration /computer:$NameServer | Out-String
     }
     "`nСостояние NTP клиента:`n$NTPstate" | Out-File -Append $journal
     "`nКонфигурация NTP:`n$NTPconf" | Out-File -Append $journal
 
     "`n9. Сведения об установленном ПО:" | Out-File -Append $journal
-    Get-WmiObject Win32reg_AddRemovePrograms @params | select DisplayName,Version,Publisher,InstallDate `
-        | sort Displayname -Unique | ft -AutoSize | Out-File -Append $journal
+    if ($os.Caption -match "10") {
+        Get-WmiObject Win32_InstalledWin32Program | sort name,version -Unique | `
+            ft name,version,vendor -AutoSize | Out-File -Append $journal
+    }
+    else {
+        Get-WmiObject Win32reg_AddRemovePrograms @params | select DisplayName,Version,Publisher,InstallDate `
+            | sort Displayname -Unique | ft -AutoSize | Out-File -Append $journal
+    }
 
     "10. Сведения об установленных ролях и компонентах:" | Out-File -Append $journal
     if ($os.Caption -match "server") {
@@ -109,16 +116,21 @@ if (Test-Connection $NameServer -Count 3 -Quiet) {
     "12. Сведения о локальных пользователях и группах:" | Out-File -Append $journal
     Get-WmiObject Win32_UserAccount @params -Filter "Domain = ""$NameServer""" | select Name,Status,Disabled,Description `
         | sort Name | ft -AutoSize | Out-File -Append $journal
-    Get-WmiObject Win32_GroupUser @params | ?{$_.GroupComponent -like "*domain=""$NameServer""*"} `
-        | fl PartComponent -groupby GroupComponent | Out-File -Append $journal
+    $out = Get-WmiObject Win32_GroupUser @params | ?{$_.GroupComponent -like "*domain=""$NameServer""*"} `
+        | fl PartComponent -groupby GroupComponent | Out-String -Stream | Where { $_.Trim().Length -gt 0 }
+    
+    $out1 = $out.replace("GroupComponent: \\$NameServer\root\cimv2:Win32_Group.Domain=""$NameServer"",Name=", "`tAccounts in the group: ")
+    $out2 = $out1.replace("PartComponent : \\$NameServer\root\cimv2:Win32_UserAccount.Domain=""$NameServer"",Name=", "")
+    $out = $out2.replace("PartComponent : \\$NameServer\root\cimv2:Win32_SystemAccount.Domain=""$NameServer"",Name=", "")
+    $out | Out-File -Append $journal
 
-    "13. Сведения о файловых ресурсах в сетевом доступе и правах доступа к ним:" | Out-File -Append $journal
+    "`n`n13. Сведения о файловых ресурсах в сетевом доступе и правах доступа к ним:`n" | Out-File -Append $journal
     $Shares = Get-WmiObject Win32_Share @params
     foreach ($Share in $Shares) {
         if ($Share.Path -ne '') {
             [string]$pathShare = "\\$NameServer\"+$Share.Name
             $pathShare | Out-File -Append $journal
-            Get-Acl $pathShare | fl | Out-File -Append $journal
+            Get-Acl $pathShare | fl Path,Owner,Group,AccessToString | Out-File -Append $journal
         }
     }
 
@@ -130,7 +142,7 @@ if (Test-Connection $NameServer -Count 3 -Quiet) {
         | fl IPAddress,MACAddress,DHCPEnabled,DefaultIPGateway,DNSDomain,Description | Out-File -Append $journal
 
     "16. Таблица маршрутизации:" | Out-File -Append $journal
-    Get-WmiObject Win32_IP4RouteTable @params | ft Name,Mask,Destination,NextHop,Metric1 | Out-File -Append $journal
+    Get-WmiObject Win32_IP4RouteTable @params | select Name,Mask,Destination,NextHop,Metric1 -Unique | ft | Out-File -Append $journal
 
 }
 else { Write-Host "Компьютер с именем $NameServer `tнедоступен." }
