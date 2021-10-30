@@ -118,11 +118,10 @@ if (Test-Connection $NameServer -Count 3 -Quiet) {
         | sort Name | ft -AutoSize | Out-File -Append $journal
     $out = Get-WmiObject Win32_GroupUser @params | ?{$_.GroupComponent -like "*domain=""$NameServer""*"} `
         | fl PartComponent -groupby GroupComponent | Out-String -Stream | Where { $_.Trim().Length -gt 0 }
-    
-    $out1 = $out.replace("GroupComponent: \\$NameServer\root\cimv2:Win32_Group.Domain=""$NameServer"",Name=", "`tAccounts in the group: ")
-    $out2 = $out1.replace("PartComponent : \\$NameServer\root\cimv2:Win32_UserAccount.Domain=""$NameServer"",Name=", "")
-    $out = $out2.replace("PartComponent : \\$NameServer\root\cimv2:Win32_SystemAccount.Domain=""$NameServer"",Name=", "")
-    $out | Out-File -Append $journal
+
+    $out.Trim() | %{ $_ -replace("^G.+Name=", "`tAccounts in the group: ")} `
+                | %{ $_ -replace("^P.+Name=", "")} `
+                | Out-File -Append $journal
 
     "`n`n13. Сведения о файловых ресурсах в сетевом доступе и правах доступа к ним:`n" | Out-File -Append $journal
     $Shares = Get-WmiObject Win32_Share @params
