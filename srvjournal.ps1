@@ -45,7 +45,7 @@ if (Test-Connection $NameServer -Count 3 -Quiet) {
 
     $date = (Get-Date).tostring("dd.MM.yyyy")
     
-    "Журнал настроек сервера $NameServer" | Out-File $journal
+    "Журнал настроек сервера $NameServer" | Out-File -Force $journal
     "на $date`n`n" | Out-File -Append $journal
     
     "1. Сведения о серверной платформе:" | Out-File -Append $journal
@@ -138,7 +138,7 @@ if (Test-Connection $NameServer -Count 3 -Quiet) {
     
     "15. Сведения о сетевых адаптерах и их конфигурации:" | Out-File -Append $journal
     Get-WmiObject Win32_NetworkAdapterConfiguration -Filter IPEnabled=TRUE @params `
-        | fl IPAddress,MACAddress,DHCPEnabled,DefaultIPGateway,DNSDomain,Description | Out-File -Append $journal
+        | fl IPAddress,MACAddress,DHCPEnabled,DefaultIPGateway,DNSDomain,DNSServerSearchOrder,Description | Out-File -Append $journal
 
     "16. Таблица маршрутизации:" | Out-File -Append $journal
     Get-WmiObject Win32_IP4RouteTable @params | select Name,Mask,Destination,NextHop,Metric1 -Unique | ft | Out-File -Append $journal
