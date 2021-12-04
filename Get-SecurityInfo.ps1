@@ -17,7 +17,7 @@ cmd: D:\> powershell.exe -executionpolicy bypass -file .\get-securityinfo.ps1 do
 
 
 Param (
-    [String]$UserName = $env:USERDOMAIN + '\' + $env:USERNAME
+    [String]$UserName = ""
 )
 
 
@@ -37,13 +37,50 @@ function ConvertTo-Encoding ([string]$From, [string]$To){
 
 
 
-$NameServer = $env:computername
-$journal = (Get-Location).Path + "\$NameServer-sec.txt"
-$gpofile = (Get-Location).Path + "\$NameServer-gpo-$env:USERNAME.html"
+function GetMappedDrives{
+    $Report = @() 
+    try { $explorer = Get-WmiObject win32_process  -EA SilentlyContinue | ?{ $_.name -eq 'explorer.exe' } }
+    catch { #exit 5
+    }
+    # Проверка в HKEY_USERS сетевых дисков для SID владельцев запущеных процессов
+    if ( $explorer ) {
+        $hive      = 2147483651
+        $sid       = ($explorer.GetOwnerSid()).sid
+        $owner     = $explorer.GetOwner()
+        $RegProv   = Get-WmiObject -List -Namespace "root\default" | ?{ $_.Name -eq 'StdRegProv' }
+        $DriveList = $RegProv.EnumKey( $hive, $sid+'\Network' )
 
-$os = Get-WmiObject Win32_OperatingSystem -EA SilentlyContinue
+        # Если подключенные диски есть, то добавляем их в отчет
+        if ( $DriveList.sNames.count -gt 0 ) {
+
+            $Person = $owner.Domain+'\'+$owner.user
+
+            foreach ( $drive in $DriveList.sNames ) {
+                $hash = [ordered]@{
+                    User         = $Person
+                    Drive        = $drive
+                    Share        = ( $RegProv.GetStringValue($Hive, $sid+'\Network\'+$drive, "RemotePath") ).sValue
+                }
+                $objDriveInfo = new-object PSObject -Property $hash
+                $Report += $objDriveInfo
+            }
+        }
+    }
+    $Report
+}#function
+
+
+
+Write-Host "Начался сбор данных... Ждите!"
+$sys = Get-WmiObject Win32_ComputerSystem  -EA SilentlyContinue
+$os  = Get-WmiObject Win32_OperatingSystem -EA SilentlyContinue
 $policy = Get-ExecutionPolicy -list
 
+$NameServer = $env:computername
+if ($UserName -eq "") { $UserName = $sys.UserName }
+
+$journal = (Get-Location).Path + "\$NameServer-sec.txt"
+$gpofile = (Get-Location).Path + "\$NameServer-gpo.html"
 
 "`t Компьютер: $NameServer`t`t  Дата проверки: " + [string](Get-date) | Out-File -Force $journal
 "`n `t Пользователь:" + $UserName | Out-File -Append $journal
@@ -51,11 +88,11 @@ $policy = Get-ExecutionPolicy -list
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 1. Все о паролях пользователей:" | Out-File -Append $journal
+"`n `t 1. Локальные пользователи:" | Out-File -Append $journal
 
 $local_users = Get-WmiObject Win32_Account -EA SilentlyContinue | ?{ $_.LocalAccount -eq 'True' -and $_.SIDType -eq 1 }
 
-$local_users | ft Name,Status,Disabled,PasswordExpires,PasswordChangeable,PasswordRequired,Description -AutoSize -Wrap | Out-File -Append $journal
+$local_users | ft Name,Status,Disabled,PasswordExpires,PasswordChangeable,PasswordRequired -AutoSize -Wrap | Out-File -Append $journal
 foreach ($user in $local_users) {
     '-'*20 | Out-File -Append $journal
 
@@ -78,18 +115,19 @@ foreach ($user in $local_users) {
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 2. Принадлежность пользователей к группам:" | Out-File -Append $journal
+"`n `t 2. Состав локальных групп:" | Out-File -Append $journal
 
 $out = Get-WmiObject Win32_GroupUser -EA SilentlyContinue | ?{ $_.GroupComponent -like "*domain=""$NameServer""*" } `
     | fl PartComponent -groupby GroupComponent | Out-String -Stream | Where { $_.Length -gt 0 }
 
-$out | %{ $_ -replace("^   G.+Name=", "`t Пользователи в группе:  ") } | %{ $_ -replace("^P.+Name=", "") } | Out-File -Append $journal
+$out | %{ $_ -replace("^   G.+Name=", "`t Состав группы:  ") } | %{ $_ -replace("^P.+Name=", "") } | Out-File -Append $journal
 #Get-LocalGroup | %{ Get-LocalGroupMember $_.name | ft $_.name, Name } | Out-File -Append $journal
 
 
 '-'*50 | Out-File -Append $journal
 "`n `t 3. Настройки сервера времени:" | Out-File -Append $journal
 
+Get-WmiObject Win32_TimeZone | fl Bias,Caption | Out-File -Append $journal
 if ($psISE -and $PSVersionTable.PSVersion.Major -gt 2) {
     $ntp_state = w32tm /query /status | Out-String | ConvertTo-Encoding cp866 windows-1251
     $ntp_conf = w32tm /query /configuration | Out-String | ConvertTo-Encoding cp866 windows-1251
@@ -104,12 +142,15 @@ else {
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 4. Файл с примененными групповыми политиками для $UserName :  $gpofile" | Out-File -Append $journal
+"`n `t 4. Политики:" | Out-File -Append $journal
 
+"`nПолитики выполнения скриптов PowerShell:" | Out-File -Append $journal 
 $policy | ft -autosize | Out-File -Append $journal
 
 GPRESULT /USER:$UserName /H $gpofile /f
 #Get-GPResultantSetOfPolicy -ReportType Html -Path $gpofile -User $UserName
+if ( $error -like "*gpresult.exe*") { "Ошибка в запросе групповых политик для $UserName" | Out-File -Append $journal  }
+else { "В Файл $gpofile выгружены примененные групповые политики для $UserName" | Out-File -Append $journal }
 
 
 '-'*50 | Out-File -Append $journal
@@ -140,7 +181,8 @@ Get-Content "$env:SYSTEMROOT\system32\drivers\etc\hosts" | ?{$_ -notlike "#*"} |
 '-'*50 | Out-File -Append $journal
 "`n `t 7. Сведения о дисках, шарах и правах доступа к ним:" | Out-File -Append $journal
 
-Get-WmiObject Win32_MappedLogicalDisk -EA SilentlyContinue | ft Name,ProviderName,FileSystem,VolumeSerialNumber -AutoSize | Out-File -Append $journal
+GetMappedDrives | ft -AutoSize | Out-File -Append $journal
+
 Get-WmiObject Win32_DiskDrive -EA SilentlyContinue | ft Name,Caption,InterfaceType,Size,MediaType -AutoSize | Out-File -Append $journal
 
 $shares = Get-WmiObject Win32_Share -EA SilentlyContinue
@@ -169,8 +211,10 @@ if ( $kes_is_install ) {
     $kes_status | Out-File -Append $journal
 
     foreach ($svc in ($kes_status -split ' ')) {
-        if ($svc -like "Updater$*") 
-            { &$kes_path statistics $svc | Out-File -Append $journal }
+        if (($svc -like "Updater$*") -or ($svc -like "Scan_Objects$*")) {
+            $svc | Out-File -Append $journal
+            &$kes_path statistics $svc | Out-File -Append $journal
+        }
     }
 }
 else { "$kes_path отсутствует..." | Out-File -Append $journal }
@@ -242,3 +286,4 @@ if ( $kes_is_install )
 else { $hash = @{ LogName='Application','System','HardwareEvents'; StartTime=$start_date; Level=2 } }
 
 Get-WinEvent -FilterHashtable $hash -EA SilentlyContinue | ft -AutoSize -Wrap | Out-File -Append $journal
+Write-Host "Готово!"

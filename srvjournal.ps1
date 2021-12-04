@@ -99,6 +99,7 @@ if (Test-Connection $NameServer -Count 3 -Quiet) {
             ft name,version,vendor -AutoSize | Out-File -Append $journal
     }
     else {
+        #Get-WmiObject Win32_Product | sort Name -Unique | ft Name,Version,Vendor -AutoSize | Out-File -Append $journal
         Get-WmiObject Win32reg_AddRemovePrograms @params | select DisplayName,Version,Publisher,InstallDate `
             | sort Displayname -Unique | ft -AutoSize | Out-File -Append $journal
     }
