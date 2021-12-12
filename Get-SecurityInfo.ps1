@@ -2,7 +2,7 @@
 
 Скрипт собирает с компа информацию для анализа по информационной безопасности.
 Запускать из консоли Powershell, если политики позволяют, либо из cmd(от админа) в обход политик.
-Файлы отчета создаются в текущей директории под именами "computername-sec.txt(-gpo-user.html)".
+Файлы отчета создаются в текущей директории под именами "computername-sec.txt(-gpo.html)".
 Параметр $UserName задает пользователя (domain\user) для проверки применяемых политик, по умолчанию текущий пользователь.
 
 Автор: Полетаев Сергей
@@ -56,7 +56,7 @@ function GetMappedDrives{
             $Person = $owner.Domain+'\'+$owner.user
 
             foreach ( $drive in $DriveList.sNames ) {
-                $hash = [ordered]@{
+                $hash = @{
                     User         = $Person
                     Drive        = $drive
                     Share        = ( $RegProv.GetStringValue($Hive, $sid+'\Network\'+$drive, "RemotePath") ).sValue
@@ -87,8 +87,21 @@ $gpofile = (Get-Location).Path + "\$NameServer-gpo.html"
 "`n `t Операционная система: " + $os.Name + " " + $os.OSArchitecture | Out-File -Append $journal
 
 
+
 '-'*50 | Out-File -Append $journal
-"`n `t 1. Локальные пользователи:" | Out-File -Append $journal
+"`n `t 1. Сведения о серверной платформе:" | Out-File -Append $journal
+Get-WmiObject Win32_ComputerSystem | fl Model,SystemType,Domain,PartOfDomain `
+    | Out-File -Append $journal
+    
+
+'-'*50 | Out-File -Append $journal
+"`n `t 2. Сведения о производителе, серийном номер и версии БИОС:" | Out-File -Append $journal
+Get-WmiObject Win32_BIOS | fl Manufacturer,SerialNumber,BIOSVersion,SMBIOSBIOSVersion,ReleaseDate `
+    | Out-File -Append $journal
+
+
+'-'*50 | Out-File -Append $journal
+"`n `t 3. Локальные пользователи:" | Out-File -Append $journal
 
 $local_users = Get-WmiObject Win32_Account -EA SilentlyContinue | ?{ $_.LocalAccount -eq 'True' -and $_.SIDType -eq 1 }
 
@@ -115,17 +128,17 @@ foreach ($user in $local_users) {
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 2. Состав локальных групп:" | Out-File -Append $journal
+"`n `t 4. Состав локальных групп:" | Out-File -Append $journal
 
 $out = Get-WmiObject Win32_GroupUser -EA SilentlyContinue | ?{ $_.GroupComponent -like "*domain=""$NameServer""*" } `
     | fl PartComponent -groupby GroupComponent | Out-String -Stream | Where { $_.Length -gt 0 }
 
-$out | %{ $_ -replace("^   G.+Name=", "`t Состав группы:  ") } | %{ $_ -replace("^P.+Name=", "") } | Out-File -Append $journal
+$out | %{ $_ -replace("^   G.+Name=", "  Состав группы:  ") } | %{ $_ -replace("^P.+Name=", "") } | Out-File -Append $journal
 #Get-LocalGroup | %{ Get-LocalGroupMember $_.name | ft $_.name, Name } | Out-File -Append $journal
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 3. Настройки сервера времени:" | Out-File -Append $journal
+"`n `t 5. Настройки сервера времени:" | Out-File -Append $journal
 
 Get-WmiObject Win32_TimeZone | fl Bias,Caption | Out-File -Append $journal
 if ($psISE -and $PSVersionTable.PSVersion.Major -gt 2) {
@@ -142,7 +155,7 @@ else {
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 4. Политики:" | Out-File -Append $journal
+"`n `t 6. Политики:" | Out-File -Append $journal
 
 "`nПолитики выполнения скриптов PowerShell:" | Out-File -Append $journal 
 $policy | ft -autosize | Out-File -Append $journal
@@ -154,7 +167,7 @@ else { "В Файл $gpofile выгружены примененные груп�
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 5. Настройки фаервола windows:" | Out-File -Append $journal
+"`n `t 7. Настройки фаервола windows:" | Out-File -Append $journal
 
 if ($psISE -and $PSVersionTable.PSVersion.Major -gt 2)
     { netsh advfirewall show allprofile | Out-String | ConvertTo-Encoding cp866 windows-1251 | Out-File -Append $journal }
@@ -173,13 +186,13 @@ else { netsh advfirewall show allprofile | Out-String | Out-File -Append $journa
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 6. Содержимое файла hosts:" | Out-File -Append $journal
+"`n `t 8. Содержимое файла hosts:" | Out-File -Append $journal
 
 Get-Content "$env:SYSTEMROOT\system32\drivers\etc\hosts" | ?{$_ -notlike "#*"} | Out-File -Append $journal
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 7. Сведения о дисках, шарах и правах доступа к ним:" | Out-File -Append $journal
+"`n `t 9. Сведения о дисках, шарах и правах доступа к ним:" | Out-File -Append $journal
 
 GetMappedDrives | ft -AutoSize | Out-File -Append $journal
 
@@ -197,7 +210,7 @@ foreach ($share in $shares) {
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 8. KES статистика:" | Out-File -Append $journal
+"`n `t 10. KES статистика:" | Out-File -Append $journal
 
 $kes_path = "C:\Program Files (x86)\Kaspersky Lab\Kaspersky Endpoint Security for Windows\avp.exe"
 $kes_is_install = Test-Path -Path $kes_path
@@ -221,25 +234,33 @@ else { "$kes_path отсутствует..." | Out-File -Append $journal }
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 9. Установленные приложения:" | Out-File -Append $journal
+"`n `t 11. Установленные приложения:" | Out-File -Append $journal
 
-Get-WmiObject win32_Product -EA SilentlyContinue | sort name | ft Name,Version,Vendor -AutoSize | Out-File -Append $journal
+if ($os.Caption -match "10" -or $os.Caption -match "11") {
+    Get-WmiObject Win32_InstalledWin32Program -EA SilentlyContinue | sort name,version -Unique | `
+        ft name,version,vendor -AutoSize | Out-File -Append $journal
+}
+else {
+#    Get-WmiObject win32_Product -EA SilentlyContinue | sort name | ft Name,Version,Vendor -AutoSize | Out-File -Append $journal
+    Get-WmiObject Win32reg_AddRemovePrograms | select DisplayName,Version,Publisher,InstallDate `
+        | sort Displayname -Unique | ft -AutoSize | Out-File -Append $journal
+}
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 10. Cлужбы::" | Out-File -Append $journal
+"`n `t 12. Cлужбы::" | Out-File -Append $journal
 
 Get-Service | sort Status, DisplayName | ft Status, StartType, DisplayName -AutoSize | Out-File -Append $journal
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 11. Рабочие процессы:" | Out-File -Append $journal
+"`n `t 13. Рабочие процессы:" | Out-File -Append $journal
 
 $process = Get-Process
 $process | sort ProcessName, Id | ft -AutoSize | Out-File -Append $journal
 
 '-'*50 | Out-File -Append $journal
-"`n `t 12. Таблица маршрутизации и открытые порты:" | Out-File -Append $journal
+"`n `t 14. Таблица маршрутизации и открытые порты:" | Out-File -Append $journal
 
 if ($psISE -and $PSVersionTable.PSVersion.Major -gt 2) {
     $ports = (netstat -ano | Out-String | ConvertTo-Encoding cp866 windows-1251).split("`n")
@@ -265,19 +286,19 @@ foreach ($port in $ports) {
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 13. Сведения о сетевых адаптерах и их конфигурации:" | Out-File -Append $journal
+"`n `t 15. Сведения о сетевых адаптерах и их конфигурации:" | Out-File -Append $journal
 Get-WmiObject Win32_NetworkAdapterConfiguration -Filter IPEnabled=TRUE `
     | fl IPAddress,MACAddress,DHCPEnabled,DefaultIPGateway,DNSDomain,DNSServerSearchOrder,Description | Out-File -Append $journal
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 14. Установленные обновления:" | Out-File -Append $journal
+"`n `t 16. Установленные обновления:" | Out-File -Append $journal
 
 Get-WmiObject win32_quickfixengineering -EA SilentlyContinue | ft -AutoSize | Out-File -Append $journal
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 15. Критические события в журналах за неделю:" | Out-File -Append $journal
+"`n `t 17. Критические события в журналах за неделю:" | Out-File -Append $journal
 
 $start_date = (Get-Date).AddDays(-7)
 

@@ -94,12 +94,12 @@ if (Test-Connection $NameServer -Count 3 -Quiet) {
     "`nКонфигурация NTP:`n$NTPconf" | Out-File -Append $journal
 
     "`n9. Сведения об установленном ПО:" | Out-File -Append $journal
-    if ($os.Caption -match "10") {
-        Get-WmiObject Win32_InstalledWin32Program | sort name,version -Unique | `
+    if ($os.Caption -match "10" -or $os.Caption -match "11") {
+        Get-WmiObject Win32_InstalledWin32Program @params | sort name,version -Unique | `
             ft name,version,vendor -AutoSize | Out-File -Append $journal
     }
     else {
-        #Get-WmiObject Win32_Product | sort Name -Unique | ft Name,Version,Vendor -AutoSize | Out-File -Append $journal
+        #Get-WmiObject Win32_Product @params | sort Name -Unique | ft Name,Version,Vendor -AutoSize | Out-File -Append $journal
         Get-WmiObject Win32reg_AddRemovePrograms @params | select DisplayName,Version,Publisher,InstallDate `
             | sort Displayname -Unique | ft -AutoSize | Out-File -Append $journal
     }
