@@ -11,15 +11,18 @@
 
 
 function ConvertTo-Encoding ([string]$From, [string]$To){
+
 Begin {
     $encFrom = [System.Text.Encoding]::GetEncoding($From)
     $encTo = [System.Text.Encoding]::GetEncoding($To)
-}#Begin
+}
+
 Process {
     $bytes = $encTo.GetBytes($_)
     $bytes = [System.Text.Encoding]::Convert($encFrom, $encTo, $bytes)
     $encTo.GetString($bytes)
-}#Process
+}
+
 }#function ConvertTo-Encoding
 
 
@@ -55,12 +58,11 @@ param (
     [string]$NameServer
 )
 
-Process {
     $Array = @()
 
     Try {
-        if ($NameServer -eq $env:computername) { $ACLs = Get-Acl $Path | Select -ExpandProperty Access }
-        else { $ACLs = Invoke-Command -ScriptBlock {param($Path) Get-Acl $Path | Select -ExpandProperty Access } -ComputerName $NameServer -Credential $cred -ArgumentList $path }
+        if ($NameServer -eq $env:computername) { $ACLs = Get-Acl $Path | Select-Object -ExpandProperty Access }
+        else { $ACLs = Invoke-Command -ScriptBlock {param($Path) Get-Acl $Path | Select-Object -ExpandProperty Access } -ComputerName $NameServer -Credential $cred -ArgumentList $path }
     }
     Catch {
         $_.Exception.Message
@@ -98,7 +100,7 @@ Process {
     }
 
     if ($Array) { $Array | Select-Object IdentityReference,AccessControlType,FileSystemRights,IsInherited,InheritanceFlags,PropagationFlags }
-}#Process
+
 }#function Get-Permissions
 
 
@@ -111,16 +113,16 @@ Param (
 
 )
 
-$ProgressBar.Value = $progressbar_value
-if (($ProgressBar.Value -ge 45) -and ($ProgressBar.Value -lt 80)) { $Label.Text = "Выполняется $text_header, процедура долгая...ждите" }
-else { $Label.Text = "Выполняется $text_header" }
-$main_form.Update()
-sleep 2
-if (!$Selection.Font.Bold) { $Selection.Font.Bold = $true }
-$Selection.Font.Size = 11
-$Selection.TypeText("`n$text_header"+':')
-$Selection.Font.Size = 8
-$Selection.Font.Bold = $false
+    $ProgressBar.Value = $progressbar_value
+    if (($ProgressBar.Value -ge 45) -and ($ProgressBar.Value -lt 80)) { $Label.Text = "Выполняется $text_header, процедура долгая...ждите" }
+    else { $Label.Text = "Выполняется $text_header" }
+    $main_form.Update()
+    Start-Sleep 2
+    if (!$Selection.Font.Bold) { $Selection.Font.Bold = $true }
+    $Selection.Font.Size = 11
+    $Selection.TypeText("`n$text_header"+':')
+    $Selection.Font.Size = 8
+    $Selection.Font.Bold = $false
 
 }#function Decorate_report
 
@@ -142,12 +144,14 @@ begin{
 #        $journal.CheckSpelling([ref]$null,[ref]$null,[ref]$null,[ref]$null)
     }
     catch {
-        $Label.Text = 'Ошибка создания документа MS Word, возможно его нет на вашем компьютере. Продолжение невозможно.'
+        $Label.Text = 'Продолжение невозможно. Ошибка создания документа MS Word.'
         Write-Warning $Label.Text
-        sleep 4
+        Start-Sleep 4
         $main_form.Close()
-        break script
+        $main_form.Dispose()
+        exit
     }
+
 
     if ( ($NameServer -eq '' ) -or ( $NameServer -eq 'localhost' ) ) {
         $NameServer = $env:computername
@@ -159,10 +163,10 @@ begin{
         if (Test-Connection -ComputerName $NameServer -Count 3 -Quiet) {
             $Label.Text = "Введите учетные данные администратора на сервере $NameServer"
             # Запрашиваем данные для авторизации на сервере
-            $cred = Get-Credential -Credential administrator
+            $cred = Get-Credential -Credential sngpcom\poletaevsy
             $params = @{"ComputerName"=$NameServer;"Credential"=$cred}
             $Label.Text = "Сервер $NameServer доступен. Начинаем сбор данных..."
-            sleep 2
+            Start-Sleep 2
         }
         else {
             $Label.Text = "Сервер $NameServer не найден в сети. Попробуйте другой."
@@ -170,7 +174,7 @@ begin{
             $OKbutton.Enabled = $true
             $Cancelbutton.Enabled = $true
             $main_form.Update()
-            sleep 2
+            Start-Sleep 2
             break
         }
     }
@@ -185,7 +189,7 @@ Process {
             $TextBox.Enabled = $false
             $OKbutton.Enabled = $false
             $Cancelbutton.Enabled = $false
-            sleep 2
+            Start-Sleep 2
 
             #Выбираем открывшийся документ для работы
             $Selection = $word.Selection
@@ -221,20 +225,20 @@ Process {
             Decorate_report 5 '1. Сведения о серверной платформе'
 
             $out = Get-WmiObject Win32_ComputerSystem @params `
-                | %{'Модель:         ',$_.Model,`
-                  "`nТип системы:    ",$_.SystemType,`
-                  "`nДомен:          ",$_.Domain,`
-                  "`nВведен в домен: ",$_.PartOfDomain}
+                | ForEach-Object{'Модель:         ',$_.Model,`
+                                 "`nТип системы:    ",$_.SystemType,`
+                                 "`nДомен:          ",$_.Domain,`
+                                 "`nВведен в домен: ",$_.PartOfDomain}
             $Selection.TypeText("`n$out`n")
 
 ##2 Сведения о производителе, серийном номер и версии БИОС
             Decorate_report 10 '2. Сведения о производителе, серийном номере и версии БИОС'
 
             $out = Get-WmiObject Win32_BIOS @params `
-                | %{'Производитель: ',$_.Manufacturer,`
-                  "`nСерийный №:    ",$_.SerialNumber,`
-                  "`nВерсия SMBIOS: ",$_.SMBIOSBIOSVersion,`
-                  "`nДата релиза:   ",$_.ReleaseDate}
+                | ForEach-Object{'Производитель: ',$_.Manufacturer,`
+                                 "`nСерийный №:    ",$_.SerialNumber,`
+                                 "`nВерсия SMBIOS: ",$_.SMBIOSBIOSVersion,`
+                                 "`nДата релиза:   ",$_.ReleaseDate}
             $out += "`nВерсия BIOS:  "
             $out += (Get-WmiObject Win32_BIOS -Property BIOSVersion @params).BIOSVersion
             $Selection.TypeText("`n$out`n")
@@ -244,60 +248,60 @@ Process {
             $Selection.TypeText("`n")
 
             $out = Get-WmiObject Win32_Processor @params `
-                | %{'Производитель: ',$_.Manufacturer,`
-                  "`nТип:           ",$_.Name,`
-                  "`nСокет:         ",$_.SocketDesignation,`
-                  "`nСостояние:     ",$_.Status,`
-                  "`nКэш L2(кБ):    ",$_.L2CacheSize,`
-                  "`nКэш L3(кБ):    ",$_.L3CacheSize,`
-                  "`nЧисло ядер:    ",$_.NumberOfCores,`
-                  "`nКол-во логических процессоров: ",$_.NumberOfLogicalProcessors}
+                | ForEach-Object{'Производитель: ',$_.Manufacturer,`
+                                 "`nТип:           ",$_.Name,`
+                                 "`nСокет:         ",$_.SocketDesignation,`
+                                 "`nСостояние:     ",$_.Status,`
+                                 "`nКэш L2(кБ):    ",$_.L2CacheSize,`
+                                 "`nКэш L3(кБ):    ",$_.L3CacheSize,`
+                                 "`nЧисло ядер:    ",$_.NumberOfCores,`
+                                 "`nКол-во логических процессоров: ",$_.NumberOfLogicalProcessors}
             $Selection.TypeText("$out`n")
 
 ##4 Сведения об оперативной памяти
             Decorate_report 20 '4. Сведения об оперативной памяти'
             $Selection.TypeText("`n")
 
-            $out = Get-WmiObject Win32_MemoryArray @params | %{[math]::Round($_.EndingAddress/1048576,0)}
+            $out = Get-WmiObject Win32_MemoryArray @params | ForEach-Object{[math]::Round($_.EndingAddress/1048576,0)}
             $Selection.TypeText("Общий объем оперативной памяти (GB): $out`n")
             $Selection.TypeText("`nПамять по физическим планкам:")
             $out = Get-WmiObject Win32_PhysicalMemory @params `
-                | %{"`nСлот:          ",$_.DeviceLocator,`
-                    "`nПроизводитель: ",$_.Manufacturer,`
-                    "`nОбъем (MB):    ",[math]::Round($_.Capacity/1048576,0)}
+                | ForEach-Object{"`nСлот:          ",$_.DeviceLocator,`
+                                 "`nПроизводитель: ",$_.Manufacturer,`
+                                 "`nОбъем (MB):    ",[math]::Round($_.Capacity/1048576,0)}
             $Selection.TypeText("$out`n")
 
 ##5 Сведения о логических дисках
             Decorate_report 25 '5. Сведения о логических дисках'
 
-            $out = Get-WmiObject Win32_LogicalDisk  -Filter 'DriveType=3' @params | %{"`nДиск ",$_.DeviceID,[math]::Round($_.Size/1Gb),'ГБайт','   Файловая система:',$_.FileSystem}
+            $out = Get-WmiObject Win32_LogicalDisk  -Filter 'DriveType=3' @params `
+                | ForEach-Object{"`nДиск ",$_.DeviceID,[math]::Round($_.Size/1Gb),'ГБайт','   Файловая система:',$_.FileSystem}
             $Selection.TypeText("$out`n")
 
 ##6 Сведения об операционной системе
             Decorate_report 30 '6. Сведения об операционной системе'
 
-            $out = Get-WmiObject Win32_OperatingSystem @params `
-                | %{"`nОС:          ",$_.Caption,`
-                    "`nВерсия:      ",$_.Version,`
-                    "`nРазрядность: ",$_.OSArchitecture,`
-                    "`nЯзык:        ",$_.OSLanguage}
+            $os = Get-WmiObject Win32_OperatingSystem @params
+            $out = $os | ForEach-Object{"`nОС:          ",$_.Caption,`
+                                        "`nВерсия:      ",$_.Version,`
+                                        "`nРазрядность: ",$_.OSArchitecture,`
+                                        "`nЯзык:        ",$_.OSLanguage}
             $Selection.TypeText("$out`n")
-            $os = $out
 
 ##7 Сведения о подключении к доменной сети
             Decorate_report 35 '7. Сведения о подключении к доменной сети'
 
             $out = Get-WmiObject Win32_NTDomain -Filter 'Status = "OK"' @params `
-                | %{"`nДомен:             ",$_.DnsForestName,`
-                    "`nСайт:              ",$_.DcSiteName,`
-                    "`nКонтроллер домена: ",$_.DomainControllerName}
+                | ForEach-Object{"`nДомен:             ",$_.DnsForestName,`
+                                 "`nСайт:              ",$_.DcSiteName,`
+                                 "`nКонтроллер домена: ",$_.DomainControllerName}
             if ($out) { $Selection.TypeText("$out`n") }
             else { $Selection.TypeText("`n Нет подключения к сети`n") }
 
 ##8 Сведения о настройках времени
             Decorate_report 40 '8. Сведения о настройках времени'
 
-            $out = Get-WmiObject Win32_TimeZone @params | %{"`nЧасовой пояс: ",$_.Caption}
+            $out = Get-WmiObject Win32_TimeZone @params | ForEach-Object{"`nЧасовой пояс: ",$_.Caption}
             $Selection.TypeText("$out`n")
             $out = "`nСостояние и конфигурация NTP:`n"
             $Selection.TypeText("$out`n")
@@ -307,7 +311,18 @@ Process {
 ##9 Сведения об установленном ПО
             Decorate_report 45 '9. Сведения об установленном ПО'
 
-            $out = Get-WmiObject Win32reg_AddRemovePrograms @params | select DisplayName,Version,Publisher,InstallDate | sort Displayname -Unique
+            $app32 = Invoke-command @params { Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* }
+            if ( $os.OSArchitecture -match '64' ) {
+                $app64 = Invoke-command @params {
+                             Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*
+                         }
+                $out = $app32 + $app64 | select DisplayName,DisplayVersion,Publisher,InstallDate | sort DisplayName -Unique
+            }
+            else {
+                $out = $app32 | select DisplayName,DisplayVersion,Publisher,InstallDate | sort DisplayName -Unique
+            }
+
+            #$out = Get-WmiObject Win32reg_AddRemovePrograms @params | Select-Object DisplayName,Version,Publisher,InstallDate | Sort-Object Displayname -Unique
             #$out = Get-WmiObject win32_Product @params | select Name,Version | sort name
             #шапка таблицы
             $table = $word.ActiveDocument.Tables.Add($Word.Selection.Range, 1, 4)
@@ -320,7 +335,7 @@ Process {
             foreach ($row in $out){
                 $table.Rows.Add()
                 $table.Cell($j,1).Range.Text = $row.DisplayName
-                if ($row.Version) { $table.Cell($j,2).Range.Text = $row.Version }
+                if ($row.Version) { $table.Cell($j,2).Range.Text = $row.DisplayVersion }
                 else { $table.Cell($j,2).Range.Text = '' }
                 if ($row.Publisher) { $table.Cell($j,3).Range.Text = $row.Publisher }
                 else { $table.Cell($j,3).Range.Text = '' }
@@ -331,11 +346,17 @@ Process {
             $table.AutoFormat(26)
             $Selection.EndKey(6, 0)
 
+            if ( $PSVersionTable.BuildVersion.Major -gt 6 ) {
+                $Selection.TypeText("`n`t Установленные из магазина:`n")
+                $out = Invoke-command @params { Get-AppxPackage | select Name | sort Name } | ForEach-Object { $_.Name }
+                $Selection.TypeText("$out`n")
+            }
+
 ##10 Сведения об установленных ролях и компонентах
             Decorate_report 50 '10. Сведения об установленных ролях и компонентах'
 
             if ($os -match "server") {
-                $out = Get-WmiObject Win32_ServerFeature @params | sort Name 
+                $out = Get-WmiObject Win32_ServerFeature @params | Sort-Object Name 
 
                 #шапка таблицы
                 $table = $word.ActiveDocument.Tables.Add($Word.Selection.Range, 1, 1)
@@ -355,7 +376,7 @@ Process {
 ##11 Сведения о службах
             Decorate_report 60 '11. Сведения о службах'
 
-            $out = Get-WmiObject win32_Service @params | select DisplayName,State,StartMode,StartName | sort DisplayName    #,Description
+            $out = Get-WmiObject win32_Service @params | Select-Object DisplayName,State,StartMode,StartName | Sort-Object DisplayName    #,Description
             #шапка таблицы
             $table = $word.ActiveDocument.Tables.Add($Word.Selection.Range, 1, 4)
             $table.Cell(1,1).Range.Text = 'Наименование службы'
@@ -380,7 +401,7 @@ Process {
 ##12 Сведения о локальных пользователях и группах
             Decorate_report 70 '12. Сведения о локальных пользователях и группах'
 
-            $out = Get-WmiObject Win32_UserAccount -Filter "Domain = ""$NameServer""" @params | select Name,Status,Disabled,Description  | sort Name
+            $out = Get-WmiObject Win32_UserAccount -Filter "Domain = ""$NameServer""" @params | Select-Object Name,Status,Disabled,Description  | Sort-Object Name
             #шапка таблицы
             $table = $word.ActiveDocument.Tables.Add($Word.Selection.Range, 1, 4)
             $table.Cell(1,1).Range.Text = 'Пользователь'
@@ -401,7 +422,7 @@ Process {
             $Selection.EndKey(6, 0)
 
             $Selection.TypeText("`n")
-            $out = Get-WmiObject Win32_GroupUser @params | ?{$_.GroupComponent -like "*domain=""$NameServer""*"}
+            $out = Get-WmiObject Win32_GroupUser @params | Where-Object{$_.GroupComponent -like "*domain=""$NameServer""*"}
             #шапка таблицы
             $table = $word.ActiveDocument.Tables.Add($Word.Selection.Range, 1, 2)
             $table.Cell(1,1).Range.Text = "Группа"
@@ -445,7 +466,7 @@ Process {
                     foreach ($row in $out) {
                         $table.Cell($j,1).Range.Text = $Share.Name
                         $table.Cell($j,2).Range.Text = $Share.Path
-                        $access = $out | %{"`n" + $_.IdentityReference,' ; ',$_.AccessControlType,' ; ',$_.FileSystemRights,' ; ',$_.IsInherited,' ; ',$_.InheritanceFlags,' ; ',$_.PropagationFlags}
+                        $access = $out | ForEach-Object{"`n" + $_.IdentityReference,' ; ',$_.AccessControlType,' ; ',$_.FileSystemRights,' ; ',$_.IsInherited,' ; ',$_.InheritanceFlags,' ; ',$_.PropagationFlags}
                         $table.Cell($j,3).Range.Text = "$access"
                         $j += 1
                     }
@@ -482,7 +503,7 @@ Process {
 ##15 Сведения о сетевых адаптерах и их конфигурации
             Decorate_report 95 '15. Сведения о сетевых адаптерах и их конфигурации'
 
-            $out = Get-WmiObject Win32_NetworkAdapterConfiguration @params | ?{$_.MACAddress} | sort Index
+            $out = Get-WmiObject Win32_NetworkAdapterConfiguration @params | Where-Object{$_.MACAddress} | Sort-Object Index
             #шапка таблицы
             $table = $word.ActiveDocument.Tables.Add($Word.Selection.Range, 1, 6)
             $table.Cell(1,1).Range.Text = 'Описание'

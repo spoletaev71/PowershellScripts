@@ -41,7 +41,7 @@ else { $params = @{"ComputerName" = $NameServer} }
 $journal  = (Get-Location).Path+"\$NameServer.txt"
 
 if (Test-Connection $NameServer -Count 3 -Quiet) {
-    Write-Host "Сервер $NameServer `tдоступен. Начинаем сбор данных..."
+    Write-Host "$NameServer `tдоступен. Начинаем сбор данных..."
 
     $date = (Get-Date).tostring("dd.MM.yyyy")
     
@@ -94,7 +94,26 @@ if (Test-Connection $NameServer -Count 3 -Quiet) {
     "`nКонфигурация NTP:`n$NTPconf" | Out-File -Append $journal
 
     "`n9. Сведения об установленном ПО:" | Out-File -Append $journal
-    if ($os.Caption -match "10" -or $os.Caption -match "11") {
+    $app32 = Invoke-command @params { Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* }
+    if ( $os.OSArchitecture -match '64' ) {
+        $app64 = Invoke-command @params {
+                     Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*
+                 }
+        $app32 + $app64 | sort DisplayName -Unique | ft DisplayName,DisplayVersion,InstallDate,Publisher -AutoSize `
+            | Out-File -Width 150 -Append $journal
+    }
+    else {
+        $app32 | sort DisplayName -Unique | ft DisplayName,DisplayVersion,InstallDate,Publisher -AutoSize `
+            | Out-File -Width 150 -Append $journal
+    }
+    if ( $PSVersionTable.BuildVersion.Major -gt 6 ) {
+        "`t Установленные из магазина:" | Out-File -Append $journal
+        Invoke-command @params {
+            Get-AppxPackage | sort Name | ft Name, PackageFullName -AutoSize | Out-File -Width 150 -Append $journal
+        }
+    }
+<#  
+    if ($PSVersionTable.BuildVersion.Major -gt 6) {
         Get-WmiObject Win32_InstalledWin32Program @params | sort name,version -Unique | `
             ft name,version,vendor -AutoSize | Out-File -Append $journal
     }
@@ -103,6 +122,7 @@ if (Test-Connection $NameServer -Count 3 -Quiet) {
         Get-WmiObject Win32reg_AddRemovePrograms @params | select DisplayName,Version,Publisher,InstallDate `
             | sort Displayname -Unique | ft -AutoSize | Out-File -Append $journal
     }
+#>
 
     "10. Сведения об установленных ролях и компонентах:" | Out-File -Append $journal
     if ($os.Caption -match "server") {
@@ -111,18 +131,16 @@ if (Test-Connection $NameServer -Count 3 -Quiet) {
     else { "`n На клиентских ОС недоступно.`n" | Out-File -Append $journal }
 
     "11. Сведения о службах:" | Out-File -Append $journal
-    Get-WmiObject win32_Service @params | select DisplayName,StartMode,State,StartName | sort DisplayName | ft -AutoSize `
+    Get-WmiObject win32_Service @params | sort DisplayName | ft StartMode,State,StartName,DisplayName -Wrap -AutoSize `
         | Out-File -Append $journal
 
     "12. Сведения о локальных пользователях и группах:" | Out-File -Append $journal
-    Get-WmiObject Win32_UserAccount @params -Filter "Domain = ""$NameServer""" | select Name,Status,Disabled,Description `
-        | sort Name | ft -AutoSize | Out-File -Append $journal
+    Get-WmiObject Win32_UserAccount @params -Filter "Domain = ""$NameServer""" | sort Name `
+        | ft Name,Status,Disabled,Description -Wrap -AutoSize | Out-File -Append $journal
     $out = Get-WmiObject Win32_GroupUser @params | ?{$_.GroupComponent -like "*domain=""$NameServer""*"} `
         | fl PartComponent -groupby GroupComponent | Out-String -Stream | Where { $_.Trim().Length -gt 0 }
 
-    $out.Trim() | %{ $_ -replace("^G.+Name=", "`tAccounts in the group: ")} `
-                | %{ $_ -replace("^P.+Name=", "")} `
-                | Out-File -Append $journal
+    $out.Trim() -replace("^G.+Name=", "Состав группы: ") -replace("^P.+Name=", "`t`t") | Out-File -Append $journal
 
     "`n`n13. Сведения о файловых ресурсах в сетевом доступе и правах доступа к ним:`n" | Out-File -Append $journal
     $Shares = Get-WmiObject Win32_Share @params
@@ -144,5 +162,6 @@ if (Test-Connection $NameServer -Count 3 -Quiet) {
     "16. Таблица маршрутизации:" | Out-File -Append $journal
     Get-WmiObject Win32_IP4RouteTable @params | select Name,Mask,Destination,NextHop,Metric1 -Unique | ft | Out-File -Append $journal
 
+    Write-Host "$NameServer `tготово."
 }
 else { Write-Host "Компьютер с именем $NameServer `tнедоступен." }
