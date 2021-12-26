@@ -148,17 +148,28 @@ else {
 '-'*50 | Out-File -Append $journal
 "`n `t 6. Политики:" | Out-File -Append $journal
 
-"`nПолитики выполнения скриптов PowerShell:" | Out-File -Append $journal 
+"`nПолитики выполнения скриптов PowerShell:" | Out-File -Append $journal
 Get-ExecutionPolicy -list | ft -autosize | Out-File -Append $journal
 
 GPRESULT /USER:$UserName /H $gpofile /f
 #Get-GPResultantSetOfPolicy -ReportType Html -Path $gpofile -User $UserName
-if ( $error -like "*gpresult.exe*") { "Ошибка в запросе групповых политик для $UserName" | Out-File -Append $journal  }
+if ( $error -like "*gpresult.exe*") { "Ошибка в запросе групповых политик для $UserName" | Out-File -Append $journal }
 else { "В Файл $gpofile выгружены примененные групповые политики для $UserName" | Out-File -Append $journal }
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 7. Настройки фаервола windows:" | Out-File -Append $journal
+"`n `t 7. Программы в автозагрузке:" | Out-File -Append $journal
+Get-WmiObject win32_startupcommand | sort Name | ft Name,User,Location -Wrap -AutoSize | Out-File -Append $journal
+#Get-Item -Path Registry::*\SOFTWARE\Microsoft\Windows\CurrentVersion\Ru* | ? ValueCount -ne 0 | %{ (select -Input $_ -ExpandProperty PSPath) + "`n" + "-" * $_.PSPath.Length; (select -Input $_ -ExpandProperty Property ) + "`n" } | Out-File -Append $journal
+#if ( $os.OSArchitecture -match '64' ) {Get-Item -Path Registry::*\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Ru* | ? ValueCount -ne 0 | %{ (select -Input $_ -ExpandProperty PSPath) + "`n" + "-" * $_.PSPath.Length; (select -Input $_ -ExpandProperty Property ) + "`n" } | Out-File -Append $journal}
+
+if ( $PSVersionTable.PSVersion.Major -gt 2 ) {
+    Get-ScheduledTask | ?{ $_.TaskPath -notmatch 'Microsoft' } | ?{$_.State -ne "Disabled"} `
+        | sort TaskName | ft State,TaskName,TaskPath -AutoSize | Out-File -Append $journal
+}
+
+'-'*50 | Out-File -Append $journal
+"`n `t 8. Настройки фаервола windows:" | Out-File -Append $journal
 
 if ($psISE -and $PSVersionTable.PSVersion.Major -gt 2)
     { netsh advfirewall show allprofile | Out-String | ConvertTo-Encoding cp866 windows-1251 | Out-File -Append $journal }
@@ -175,12 +186,12 @@ else { netsh advfirewall show allprofile | Out-String | Out-File -Append $journa
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 8. Содержимое файла hosts:" | Out-File -Append $journal
+"`n `t 9. Содержимое файла hosts:" | Out-File -Append $journal
 Get-Content "$env:SYSTEMROOT\system32\drivers\etc\hosts" | ?{$_ -notlike "#*"} | Out-File -Append $journal
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 9. Сведения о дисках, шарах и правах доступа к ним:" | Out-File -Append $journal
+"`n `t 10. Сведения о дисках, шарах и правах доступа к ним:" | Out-File -Append $journal
 
 GetMappedDrives | ft -AutoSize | Out-File -Append $journal
 
@@ -199,7 +210,7 @@ foreach ($share in $shares) {
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 10. KES статистика:" | Out-File -Append $journal
+"`n `t 11. KES статистика:" | Out-File -Append $journal
 
 $kes_path = "C:\Program Files (x86)\Kaspersky Lab\Kaspersky Endpoint Security for Windows\avp.exe"
 $kes_is_install = Test-Path -Path $kes_path
@@ -223,19 +234,19 @@ else { "$kes_path отсутствует..." | Out-File -Append $journal }
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 11. Установленные приложения:" | Out-File -Append $journal
+"`n `t 12. Установленные приложения:" | Out-File -Append $journal
 
 $app32 = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* 
 
 if ( $os.OSArchitecture -match '64' ) {
     $app64 = Get-ItemProperty HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* 
 
-    $app32 + $app64 | sort DisplayName -Unique | ft DisplayName,DisplayVersion,InstallDate,Publisher -AutoSize `
-        | Out-File -Width 150 -Append $journal
+    $app32 + $app64 | ?{ $_.DisplayName -notlike "security update*" -and $_.DisplayName -notlike "update*" } | sort DisplayName -Unique `
+        | ft DisplayName,DisplayVersion,InstallDate,Publisher -AutoSize | Out-File -Width 150 -Append $journal
 }
 else {
-    $app32 | sort DisplayName -Unique | ft DisplayName,DisplayVersion,InstallDate,Publisher -AutoSize `
-        | Out-File -Width 150 -Append $journal
+    $app32 | ?{ $_.DisplayName -notlike "Security update*" -and $_.DisplayName -notlike "Update*" } | sort DisplayName -Unique `
+        | ft DisplayName,DisplayVersion,InstallDate,Publisher -AutoSize | Out-File -Width 150 -Append $journal
 }
 
 if ( $PSVersionTable.BuildVersion.Major -gt 6 ) {
@@ -245,18 +256,18 @@ if ( $PSVersionTable.BuildVersion.Major -gt 6 ) {
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 12. Cлужбы::" | Out-File -Append $journal
+"`n `t 13. Cлужбы::" | Out-File -Append $journal
 Get-Service | sort Status, DisplayName | ft Status, StartType, DisplayName -AutoSize | Out-File -Append $journal
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 13. Рабочие процессы:" | Out-File -Append $journal
+"`n `t 14. Рабочие процессы:" | Out-File -Append $journal
 $process = Get-Process
 $process | sort ProcessName, Id | ft -AutoSize | Out-File -Append $journal
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 14. Таблица маршрутизации и открытые порты:" | Out-File -Append $journal
+"`n `t 15. Таблица маршрутизации и открытые порты:" | Out-File -Append $journal
 
 if ($psISE -and $PSVersionTable.PSVersion.Major -gt 2) {
     $ports = (netstat -ano | Out-String | ConvertTo-Encoding cp866 windows-1251).split("`n")
@@ -282,18 +293,18 @@ foreach ($port in $ports) {
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 15. Сведения о сетевых адаптерах и их конфигурации:" | Out-File -Append $journal
+"`n `t 16. Сведения о сетевых адаптерах и их конфигурации:" | Out-File -Append $journal
 Get-WmiObject Win32_NetworkAdapterConfiguration -Filter IPEnabled=TRUE `
     | fl IPAddress,MACAddress,DHCPEnabled,DefaultIPGateway,DNSDomain,DNSServerSearchOrder,Description | Out-File -Append $journal
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 16. Установленные обновления:" | Out-File -Append $journal
+"`n `t 17. Установленные обновления:" | Out-File -Append $journal
 Get-WmiObject win32_quickfixengineering -EA SilentlyContinue | ft -AutoSize | Out-File -Append $journal
 
 
 '-'*50 | Out-File -Append $journal
-"`n `t 17. Критические события в журналах за неделю:" | Out-File -Append $journal
+"`n `t 18. Критические события в журналах за неделю:" | Out-File -Append $journal
 
 $start_date = (Get-Date).AddDays(-7)
 
